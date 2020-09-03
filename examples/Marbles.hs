@@ -3,44 +3,44 @@
 
 module Marbles where
 
-import Control.Monad.Except (ExceptT (..), runExceptT, throwError)
-import Data.Aeson
-  ( FromJSON,
-    ToJSON,
-    decode,
-    defaultOptions,
-    encode,
-    genericToEncoding,
-    toEncoding,
-  )
-import qualified Data.ByteString as BS
-import qualified Data.ByteString.Lazy as LBS
-import qualified Data.ByteString.UTF8 as BSU
-import Data.Functor.Classes
-import Data.Text
-  ( Text,
-    append,
-    pack,
-    unpack,
-  )
-import qualified Data.Text.Encoding as TSE
-import qualified Data.Text.Lazy as TL
-import Debug.Trace
-import GHC.Generics
-import Ledger.Queryresult.KvQueryResult as Pb
-import Peer.ChaincodeShim as Pb
-import Peer.ProposalResponse as Pb
-import Shim
-  ( ChaincodeStub (..),
-    ChaincodeStubInterface (..),
-    DefaultChaincodeStub,
-    Error (..),
-    StateQueryIterator (..),
-    StateQueryIteratorInterface (..),
-    errorPayload,
-    start,
-    successPayload,
-  )
+import              Control.Monad.Except                ( ExceptT (..)
+                                                            ,runExceptT
+                                                            ,throwError
+                                                        )
+import              Data.Aeson                          ( FromJSON
+                                                            ,ToJSON
+                                                            ,decode
+                                                            ,defaultOptions
+                                                            ,encode
+                                                            ,genericToEncoding
+                                                            ,toEncoding
+                                                        )
+import qualified    Data.ByteString                     as BS
+import qualified    Data.ByteString.Lazy                as LBS
+import qualified    Data.ByteString.UTF8                as BSU
+import              Data.Functor.Classes
+import              Data.Text                           ( Text
+                                                            ,append
+                                                            ,pack
+                                                            ,unpack
+                                                        )
+import qualified    Data.Text.Encoding                  as TSE
+import qualified    Data.Text.Lazy                      as TL
+import              Debug.Trace
+import              GHC.Generics
+import              Ledger.Queryresult.KvQueryResult    as Pb
+import              Peer.ChaincodeShim                  as Pb
+import              Peer.ProposalResponse               as Pb
+import              Shim                                ( ChaincodeStub (..)
+                                                            ,ChaincodeStubInterface (..)
+                                                            ,DefaultChaincodeStub
+                                                            ,Error (..)
+                                                            ,StateQueryIterator (..)
+                                                            ,StateQueryIteratorInterface (..)
+                                                            ,errorPayload
+                                                            ,start
+                                                            ,successPayload
+                                                        )
 
 main :: IO ()
 main = Shim.start chaincodeStub
@@ -142,12 +142,11 @@ transferMarble s params =
 deleteMarble :: DefaultChaincodeStub -> [Text] -> IO Pb.Response
 deleteMarble s params =
   if Prelude.length params == 1
-    then do
-      e <- delState s (head params)
-      case e of
-        Left _ -> pure $ errorPayload "Failed to delete marble"
-        Right _ -> pure $ successPayload Nothing
-    else pure $ errorPayload "Incorrect arguments. Need a marble name"
+  then
+    eitherToPbResponse <$> (runExceptT $ do
+      _ <- delState s (head params)
+      pure $ successPayload Nothing)
+  else pure $ errorPayload "Incorrect arguments. Need a marble name"
 
 readMarble :: DefaultChaincodeStub -> [Text] -> IO Pb.Response
 readMarble s params =
@@ -161,55 +160,51 @@ readMarble s params =
 getMarblesByRange :: DefaultChaincodeStub -> [Text] -> IO Pb.Response
 getMarblesByRange s params =
   if Prelude.length params == 2
-    then do
-      e <- getStateByRange s (params !! 0) (params !! 1)
-      case e of
-        Left _ -> pure $ errorPayload "Failed to get marbles"
-        Right sqi -> do
-          resultBytes <- generateResultBytes sqi ""
-          trace (show resultBytes) (pure $ successPayload Nothing)
+    then 
+        eitherToPbResponse <$> (runExceptT $ do
+            sqi <- getStateByRange s (params !! 0) (params !! 1)
+            resultBytes <- generateResultBytes sqi ""
+            trace (show resultBytes) (pure $ successPayload Nothing))
     else pure $ errorPayload "Incorrect arguments. Need a start key and an end key"
 
 -- -- TODO: include retrieval of next set of results using the returned bookmark (next TODO)
 getMarblesByRangeWithPagination :: DefaultChaincodeStub -> [Text] -> IO Pb.Response
 getMarblesByRangeWithPagination s params =
   if Prelude.length params == 4
-    then do
-      e <- getStateByRangeWithPagination s (params !! 0) (params !! 1) (read (unpack $ params !! 2) :: Int) (params !! 3)
-      case e of
-        Left _ -> pure $ errorPayload "Failed to get marbles"
-        Right (sqi, metadata) -> do
-          resultBytes <- generateResultBytesForPagination (sqi, metadata) ""
-          trace (show resultBytes) (pure $ successPayload Nothing)
-    else pure $ errorPayload "Incorrect arguments. Need start key, end key, pageSize and bookmark"
+  then 
+    eitherToPbResponse <$> (runExceptT $ do
+        (sqi, metadata) <- getStateByRangeWithPagination s (params !! 0) (params !! 1) (read (unpack $ params !! 2) :: Int) (params !! 3)
+        resultBytes <- generateResultBytesForPagination (sqi, metadata) ""
+        trace (show resultBytes) (pure $ successPayload Nothing))
+  else pure $ errorPayload "Incorrect arguments. Need start key, end key, pageSize and bookmark"
 
-generateResultBytes :: StateQueryIterator -> Text -> IO (Either Error BSU.ByteString)
-generateResultBytes sqi text = do
+generateResultBytes :: StateQueryIterator -> Text -> ExceptT Error IO BSU.ByteString
+generateResultBytes sqi text = ExceptT $ do
   hasNextBool <- hasNext sqi
-  if (trace $ "hasNext in generateResultBytes: " ++ show hasNextBool) hasNextBool
-    then do
-      eeKV <- next sqi
-      case eeKV of
+  if hasNextBool
+  then do
+    eeKv <- runExceptT $ next sqi
+    case eeKv of
+      Left e -> pure $ Left e
+      Right kv ->
+        let makeKVString :: Pb.KV -> Text
+            makeKVString kv_ = pack "Key: " <> TL.toStrict (Pb.kvKey kv_) <> pack ", Value: " <> TSE.decodeUtf8 (kvValue kv_)
+        in runExceptT $ generateResultBytes sqi (append text (makeKVString kv))
+  else pure $ Right $ TSE.encodeUtf8 text
+
+generateResultBytesForPagination :: (StateQueryIterator, Pb.QueryResponseMetadata) -> Text -> ExceptT Error IO BSU.ByteString
+generateResultBytesForPagination (sqi, md) text = ExceptT $ do
+  hasNextBool <- hasNext sqi
+  if hasNextBool
+  then do
+      eeKv <- runExceptT $ next sqi
+      case eeKv of
         Left e -> pure $ Left e
         Right kv ->
           let makeKVString :: Pb.KV -> Text
               makeKVString kv_ = pack "Key: " <> TL.toStrict (Pb.kvKey kv_) <> pack ", Value: " <> TSE.decodeUtf8 (kvValue kv_)
-           in generateResultBytes sqi (append text (makeKVString kv))
-    else pure $ Right $ TSE.encodeUtf8 text
-
-generateResultBytesForPagination :: (StateQueryIterator, Pb.QueryResponseMetadata) -> Text -> IO (Either Error BSU.ByteString)
-generateResultBytesForPagination (sqi, md) text = do
-  hasNextBool <- hasNext sqi
-  if (trace $ "hasNext in generateResultBytesForPagination: " ++ show hasNextBool) hasNextBool
-    then do
-      eeKV <- next sqi
-      case eeKV of
-        Left e -> pure $ Left e
-        Right kv ->
-          let makeKVString :: Pb.KV -> Text
-              makeKVString kv_ = pack "Key: " <> TL.toStrict (Pb.kvKey kv_) <> pack ", Value: " <> TSE.decodeUtf8 (kvValue kv_)
-           in generateResultBytesForPagination (sqi, md) (append text (makeKVString kv))
-    else pure $ Right $ TSE.encodeUtf8 text
+          in runExceptT $ generateResultBytesForPagination (sqi, md) (append text (makeKVString kv))
+  else pure $ Right $ TSE.encodeUtf8 text
 
 parseMarble :: [Text] -> Marble
 parseMarble params =
@@ -232,5 +227,5 @@ marbleWithNewOwner newOwner oldMarble =
     }
 
 eitherToPbResponse :: Show a => Either Error a -> Pb.Response
-eitherToPbResponse (Right a) = (trace $ "EitherToPbResponse right case: " ++ (show a)) successPayload Nothing
-eitherToPbResponse (Left err) = (trace $ "EitherToPbResponse left error: " ++ (show err)) errorPayload $ pack $ show err
+eitherToPbResponse (Right a) = successPayload $ Just $ BSU.fromString $ show a
+eitherToPbResponse (Left err) = errorPayload $ pack $ show err

@@ -129,7 +129,7 @@ instance ChaincodeStubInterface DefaultChaincodeStub where
   delState ccs key =
       let payload = delStatePayload key
           message = buildChaincodeMessage DEL_STATE payload (txId ccs) (channelId ccs)
-      in do
+      in ExceptT $ do
         e <- (sendStream ccs) message
         case e of
           Left err -> error ("Error while streaming: " ++ show err)
@@ -149,7 +149,7 @@ instance ChaincodeStubInterface DefaultChaincodeStub where
   getStateByRange ccs startKey endKey =
     let payload = getStateByRangePayload startKey endKey Nothing
         message = buildChaincodeMessage GET_STATE_BY_RANGE payload (txId ccs) (channelId ccs)
-    in do
+    in ExceptT $ do
           e <- (sendStream ccs) message
           case e of
             Left  err -> error ("Error while streaming: " ++ show err)
@@ -165,7 +165,7 @@ instance ChaincodeStubInterface DefaultChaincodeStub where
       }
         payload = (trace "Building getStateByRangeWithPagination payload") getStateByRangePayload startKey endKey $ Just metadata
         message = buildChaincodeMessage GET_STATE_BY_RANGE payload (txId ccs) (channelId ccs)
-    in do
+    in ExceptT $ do
           e <- (sendStream ccs) message
           case e of
             Left  err -> error ("Error while streaming: " ++ show err)
@@ -185,7 +185,7 @@ instance StateQueryIteratorInterface StateQueryIterator where
   -- close :: sqi -> IO (Maybe Error)
   close _ = pure Nothing
   -- next :: sqi -> IO (Either Error Pb.KV)
-  next sqi = do
+  next sqi = ExceptT $ do
     eeQueryResultBytes <- nextResult sqi 
     case eeQueryResultBytes of
       Left _ -> pure $ Left $ Error "Error getting next queryResultBytes"

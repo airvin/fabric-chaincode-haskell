@@ -70,7 +70,7 @@ class ChaincodeStubInterface ccs where
   -- DelState records the specified `key` to be deleted in the writeset of
   -- the transaction proposal. The `key` and its value will be deleted from
   -- the ledger when the transaction is validated and successfully committed.
-  delState :: ccs -> Text -> IO (Either Error ByteString)
+  delState :: ccs -> Text -> ExceptT Error IO ByteString
 
   -- SetStateValidationParameter sets the key-level endorsement policy for `key`.
   -- setStateValidationParameter :: ccs -> String -> [ByteString] -> Maybe Error
@@ -92,7 +92,7 @@ class ChaincodeStubInterface ccs where
   -- Call Close() on the returned StateQueryIteratorInterface object when done.
   -- The query is re-executed during validation phase to ensure result set
   -- has not changed since transaction endorsement (phantom reads detected).
-  getStateByRange :: ccs -> Text -> Text -> IO (Either Error StateQueryIterator)
+  getStateByRange :: ccs -> Text -> Text -> ExceptT Error IO StateQueryIterator
 
   -- GetStateByRangeWithPagination returns a range iterator over a set of keys in the
   -- ledger. The iterator can be used to fetch keys between the startKey (inclusive)
@@ -110,7 +110,7 @@ class ChaincodeStubInterface ccs where
   -- query on start or end.
   -- Call Close() on the returned StateQueryIteratorInterface object when done.
   -- This call is only supported in a read only transaction.
-  getStateByRangeWithPagination :: ccs -> Text -> Text -> Int -> Text -> IO (Either Error (StateQueryIterator, Pb.QueryResponseMetadata))
+  getStateByRangeWithPagination :: ccs -> Text -> Text -> Int -> Text -> ExceptT Error IO (StateQueryIterator, Pb.QueryResponseMetadata)
 
   -- GetStateByPartialCompositeKey queries the state in the ledger based on
   -- a given partial composite key. This function returns an iterator
@@ -334,7 +334,7 @@ class StateQueryIteratorInterface sqi where
   --     -- Provides the next key-value pair pointed by the iterator
   --     TODO: Change this to an ExceptT type to make handling the next function
   --     easier on the user chaincode side
-  next :: sqi -> IO (Either Error Pb.KV)
+  next :: sqi -> ExceptT Error IO Pb.KV
 
 -- The type class HistoryQueryIterator defines the behaviour of the types that expose functionalities
 -- for iteratogin over a set of key modifications that are associated to the history of a key.
