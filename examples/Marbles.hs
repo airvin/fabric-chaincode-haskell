@@ -3,7 +3,7 @@
 
 module Marbles where
 
-import Control.Monad.Except (ExceptT (..), runExceptT)
+import Control.Monad.Except (ExceptT (..), runExceptT, throwError)
 import Data.Aeson
   ( FromJSON,
     ToJSON,
@@ -107,7 +107,7 @@ initMarble s params =
                 response <- getState s (head params)
                 -- Check if marble already exists
                 if BS.length response /= 0
-                  then fail $ "This marble already exists: " ++ (unpack $ head params) :: ExceptT Error IO a
+                  then throwError $ Error $ "This marble already exists: " ++ (unpack $ head params)
                   else -- marshal marble to JSON
 
                     let marbleJSON = LBS.toStrict $ encode (parseMarble params)
