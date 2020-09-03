@@ -103,7 +103,7 @@ instance ChaincodeStubInterface DefaultChaincodeStub where
         Just timestamp -> Right timestamp
     Nothing -> Left $ Error "Chaincode stub doesn't has a proposal to get the timestamp from"
 
---   getState :: ccs -> Text ->  ExceptT Error IO ByteString
+  -- getState :: ccs -> Text ->  ExceptT Error IO ByteString
   getState ccs key =
     let payload = getStatePayload key
         message =
@@ -114,12 +114,12 @@ instance ChaincodeStubInterface DefaultChaincodeStub where
             Left  err -> pure $ Left $ Error $ "Error while streaming: " ++ show err
             Right _   -> listenForResponse (recvStream ccs)
 
-  -- putState :: ccs -> Text -> ByteString -> IO (Either Error ByteString)
+  -- putState :: ccs -> Text -> ByteString -> ExceptT Error IO ByteString
   putState ccs key value =
     let payload = putStatePayload key value
         message =
             buildChaincodeMessage PUT_STATE payload (txId ccs) (channelId ccs)
-    in  do
+    in ExceptT $ do
           e <- (sendStream ccs) message
           case e of
             Left  err -> pure $ Left $ Error $ "Error while streaming: " ++ show err

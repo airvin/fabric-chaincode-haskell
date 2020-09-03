@@ -78,19 +78,19 @@ invokeFunc s =
    in case e of
         Left _ -> pure $ errorPayload ""
         Right ("initMarble", parameters) -> initMarble s parameters
-        -- Right ("transferMarble", parameters) -> transferMarble s parameters
+        Right ("transferMarble", parameters) -> transferMarble s parameters
         -- Right ("transferMarbleBasedOnColor", parameters) ->
         --   transferMarbleBasedOnColor s parameters
-        -- Right ("deleteMarble", parameters) -> deleteMarble s parameters
-        -- Right ("readMarble", parameters) -> readMarble s parameters
+        Right ("deleteMarble", parameters) -> deleteMarble s parameters
+        Right ("readMarble", parameters) -> readMarble s parameters
         -- Right ("queryMarblesByOwner", parameters) ->
         --   queryMarblesByOwner s parameters
         -- Right ("queryMarbles", parameters) -> queryMarbles s parameters
         -- Right ("getHistoryForMarble", parameters) ->
         --   getHistoryForMarble s parameters
-        -- Right ("getMarblesByRange", parameters) -> getMarblesByRange s parameters
-        -- Right ("getMarblesByRangeWithPagination", parameters) ->
-        --   getMarblesByRangeWithPagination s parameters
+        Right ("getMarblesByRange", parameters) -> getMarblesByRange s parameters
+        Right ("getMarblesByRangeWithPagination", parameters) ->
+          getMarblesByRangeWithPagination s parameters
         -- Right ("queryMarblesWithPagination", parameters) ->
         --   queryMarblesWithPagination s parameters
         Right (fn, _) ->
@@ -101,149 +101,115 @@ invokeFunc s =
 initMarble :: DefaultChaincodeStub -> [Text] -> IO Pb.Response
 initMarble s params =
   if Prelude.length params == 4
-    then
-      eitherToPbResponse
-        <$> ( runExceptT $ do
-                response <- getState s (head params)
-                -- Check if marble already exists
-                if BS.length response /= 0
-                  then throwError $ Error $ "This marble already exists: " ++ (unpack $ head params)
-                  else -- marshal marble to JSON
+  then
+    eitherToPbResponse
+      <$> ( runExceptT $ do
+        response <- getState s (head params)
+        -- Check if marble already exists
+        if BS.length response /= 0
+        then throwError $ Error $ "This marble already exists: " ++ (unpack $ head params)
+        else -- marshal marble to JSON
+          let marbleJSON = LBS.toStrict $ encode (parseMarble params)
+          in putState s (head params) marbleJSON
+      )
+  else
+      pure $ errorPayload "Incorrect arguments. Need a marble name, color, size and owner"
 
-                    let marbleJSON = LBS.toStrict $ encode (parseMarble params)
-                     in ExceptT $ putState s (head params) marbleJSON
-            )
-    else
-      pure $
-        errorPayload
-          "Incorrect arguments. Need a marble name, color, size and owner"
-
--- transferMarble :: DefaultChaincodeStub -> [Text] -> IO Pb.Response
--- transferMarble s params =
---   if Prelude.length params == 2
---     then
---       pure $ eitherToPbResponse <$> do
---         response <- getState s (head params)
---         if BS.length response == 0
---           then pure $ Left $ Error $ "Marble not found"
---           else -- Unmarshal the marble from JSON
-
---             let maybeMarble = decode (LBS.fromStrict response) :: Maybe Marble
---                 marbleOwner = params !! 1
---              in case maybeMarble of
---                   Nothing -> pure $ Left $ Error "Error decoding marble"
---                   Just oldMarble ->
---                     -- Create a new marble instance with the new owner
---                     let newMarble = marbleWithNewOwner marbleOwner oldMarble
---                         -- Marshal new marble to JSON
---                         marbleJSON = LBS.toStrict $ encode newMarble
---                      in do
---                           ee <- putState s (head params) marbleJSON
---                           pure ee
---     else pure $ errorPayload "Incorrect arguments. Need a marble name and new owner"
-
--- then do
---   --   Check that the marble already exists
--- e <- getState s (head params)
--- case e of
---   Left  _        -> pure $ errorPayload "Failed to get marble"
---   Right response -> if BS.length response == 0
---     then pure $ errorPayload "Marble not found"
---     else
---       -- Unmarshal the marble from JSON
---       let maybeMarble = decode (LBS.fromStrict response) :: Maybe Marble
---           marbleOwner = params !! 1
---       in  case maybeMarble of
---             Nothing -> pure $ errorPayload "Error decoding marble"
---             Just oldMarble ->
---               -- Create a new marble instance with the new owner
---               let newMarble  = marbleWithNewOwner marbleOwner oldMarble
---                   -- Marshal new marble to JSON
---                   marbleJSON = LBS.toStrict $ encode newMarble
---               in  do
---                     ee <- putState s (head params) marbleJSON
---                     case ee of
---                       Left _ ->
---                         pure $ errorPayload "Failed to create marble"
---                       Right _ -> pure $ successPayload Nothing
+transferMarble :: DefaultChaincodeStub -> [Text] -> IO Pb.Response
+transferMarble s params =
+  if Prelude.length params == 2
+  then
+    eitherToPbResponse <$> (runExceptT $ do
+      response <- getState s (head params)
+      if BS.length response == 0
+      then throwError $ Error $ "Marble not found"
+      else
+        -- Unmarshal the marble from JSON
+        let maybeMarble = decode (LBS.fromStrict response) :: Maybe Marble
+            marbleOwner = params !! 1
+        in case maybeMarble of
+            Nothing -> throwError $ Error "Error decoding marble"
+            Just oldMarble ->
+            -- Create a new marble instance with the new owner
+                let newMarble = marbleWithNewOwner marbleOwner oldMarble
+                    -- Marshal new marble to JSON
+                    marbleJSON = LBS.toStrict $ encode newMarble
+                in putState s (head params) marbleJSON)
+  else pure $ errorPayload "Incorrect arguments. Need a marble name and new owner"
 
 -- -- TODO: Once indexing by color has been implemented, need to
 -- -- get marble and also delete marble composite key
--- deleteMarble :: DefaultChaincodeStub -> [Text] -> IO Pb.Response
--- deleteMarble s params =
---   if Prelude.length params == 1
---     then do
---       e <- delState s (head params)
---       case e of
---         Left _ -> pure $ errorPayload "Failed to delete marble"
---         Right _ -> pure $ successPayload Nothing
---     else pure $ errorPayload "Incorrect arguments. Need a marble name"
+deleteMarble :: DefaultChaincodeStub -> [Text] -> IO Pb.Response
+deleteMarble s params =
+  if Prelude.length params == 1
+    then do
+      e <- delState s (head params)
+      case e of
+        Left _ -> pure $ errorPayload "Failed to delete marble"
+        Right _ -> pure $ successPayload Nothing
+    else pure $ errorPayload "Incorrect arguments. Need a marble name"
 
--- readMarble :: DefaultChaincodeStub -> [Text] -> IO Pb.Response
--- readMarble s params =
---   if Prelude.length params == 1
---     then do
---       e <- getState s (head params)
---       case e of
---         Left _ -> pure $ errorPayload "Failed to get marble"
---         Right a -> trace (BSU.toString a) (pure $ successPayload Nothing)
---     else
---       pure $
---         errorPayload
---           "Incorrect arguments. Need a marble name, color, size and owner"
+readMarble :: DefaultChaincodeStub -> [Text] -> IO Pb.Response
+readMarble s params =
+  if Prelude.length params == 1
+  then 
+    eitherToPbResponse <$> (runExceptT $ do
+        response <- getState s (head params)
+        trace (BSU.toString response) (pure $ successPayload Nothing))
+  else pure $ errorPayload "Incorrect arguments. Need a marble name, color, size and owner"
 
--- getMarblesByRange :: DefaultChaincodeStub -> [Text] -> IO Pb.Response
--- getMarblesByRange s params =
---   if Prelude.length params == 2
---     then do
---       e <- getStateByRange s (params !! 0) (params !! 1)
---       case e of
---         Left _ -> pure $ errorPayload "Failed to get marbles"
---         Right sqi -> do
---           resultBytes <- generateResultBytes sqi ""
---           trace (show resultBytes) (pure $ successPayload Nothing)
---     else pure $ errorPayload "Incorrect arguments. Need a start key and an end key"
+getMarblesByRange :: DefaultChaincodeStub -> [Text] -> IO Pb.Response
+getMarblesByRange s params =
+  if Prelude.length params == 2
+    then do
+      e <- getStateByRange s (params !! 0) (params !! 1)
+      case e of
+        Left _ -> pure $ errorPayload "Failed to get marbles"
+        Right sqi -> do
+          resultBytes <- generateResultBytes sqi ""
+          trace (show resultBytes) (pure $ successPayload Nothing)
+    else pure $ errorPayload "Incorrect arguments. Need a start key and an end key"
 
 -- -- TODO: include retrieval of next set of results using the returned bookmark (next TODO)
--- getMarblesByRangeWithPagination :: DefaultChaincodeStub -> [Text] -> IO Pb.Response
--- getMarblesByRangeWithPagination s params =
---   if Prelude.length params == 4
---     then do
---       e <- getStateByRangeWithPagination s (params !! 0) (params !! 1) (read (unpack $ params !! 2) :: Int) (params !! 3)
---       case e of
---         Left _ -> pure $ errorPayload "Failed to get marbles"
---         Right (sqi, metadata) -> do
---           resultBytes <- generateResultBytesForPagination (sqi, metadata) ""
---           trace (show resultBytes) (pure $ successPayload Nothing)
---     else pure $ errorPayload "Incorrect arguments. Need start key, end key, pageSize and bookmark"
+getMarblesByRangeWithPagination :: DefaultChaincodeStub -> [Text] -> IO Pb.Response
+getMarblesByRangeWithPagination s params =
+  if Prelude.length params == 4
+    then do
+      e <- getStateByRangeWithPagination s (params !! 0) (params !! 1) (read (unpack $ params !! 2) :: Int) (params !! 3)
+      case e of
+        Left _ -> pure $ errorPayload "Failed to get marbles"
+        Right (sqi, metadata) -> do
+          resultBytes <- generateResultBytesForPagination (sqi, metadata) ""
+          trace (show resultBytes) (pure $ successPayload Nothing)
+    else pure $ errorPayload "Incorrect arguments. Need start key, end key, pageSize and bookmark"
 
--- generateResultBytes :: StateQueryIterator -> Text -> IO (Either Error BSU.ByteString)
--- generateResultBytes sqi text = do
---   hasNextBool <- hasNext sqi
---   if (trace $ "hasNext in generateResultBytes: " ++ show hasNextBool) hasNextBool
---     then do
---       eeKV <- next sqi
---       case eeKV of
---         Left e -> pure $ Left e
---         Right kv ->
---           let makeKVString :: Pb.KV -> Text
---               makeKVString kv_ = pack "Key: " <> TL.toStrict (Pb.kvKey kv_) <> pack ", Value: " <> TSE.decodeUtf8 (kvValue kv_)
---            in generateResultBytes sqi (append text (makeKVString kv))
---     else pure $ Right $ TSE.encodeUtf8 text
+generateResultBytes :: StateQueryIterator -> Text -> IO (Either Error BSU.ByteString)
+generateResultBytes sqi text = do
+  hasNextBool <- hasNext sqi
+  if (trace $ "hasNext in generateResultBytes: " ++ show hasNextBool) hasNextBool
+    then do
+      eeKV <- next sqi
+      case eeKV of
+        Left e -> pure $ Left e
+        Right kv ->
+          let makeKVString :: Pb.KV -> Text
+              makeKVString kv_ = pack "Key: " <> TL.toStrict (Pb.kvKey kv_) <> pack ", Value: " <> TSE.decodeUtf8 (kvValue kv_)
+           in generateResultBytes sqi (append text (makeKVString kv))
+    else pure $ Right $ TSE.encodeUtf8 text
 
--- generateResultBytesForPagination :: (StateQueryIterator, Pb.QueryResponseMetadata) -> Text -> IO (Either Error BSU.ByteString)
--- generateResultBytesForPagination (sqi, md) text = do
---   hasNextBool <- hasNext sqi
---   if (trace $ "hasNext in generateResultBytesForPagination: " ++ show hasNextBool) hasNextBool
---     then do
---       eeKV <- next sqi
---       case eeKV of
---         Left e -> pure $ Left e
---         Right kv ->
---           let makeKVString :: Pb.KV -> Text
---               makeKVString kv_ = pack "Key: " <> TL.toStrict (Pb.kvKey kv_) <> pack ", Value: " <> TSE.decodeUtf8 (kvValue kv_)
---            in generateResultBytesForPagination (sqi, md) (append text (makeKVString kv))
---     else pure $ Right $ TSE.encodeUtf8 text
+generateResultBytesForPagination :: (StateQueryIterator, Pb.QueryResponseMetadata) -> Text -> IO (Either Error BSU.ByteString)
+generateResultBytesForPagination (sqi, md) text = do
+  hasNextBool <- hasNext sqi
+  if (trace $ "hasNext in generateResultBytesForPagination: " ++ show hasNextBool) hasNextBool
+    then do
+      eeKV <- next sqi
+      case eeKV of
+        Left e -> pure $ Left e
+        Right kv ->
+          let makeKVString :: Pb.KV -> Text
+              makeKVString kv_ = pack "Key: " <> TL.toStrict (Pb.kvKey kv_) <> pack ", Value: " <> TSE.decodeUtf8 (kvValue kv_)
+           in generateResultBytesForPagination (sqi, md) (append text (makeKVString kv))
+    else pure $ Right $ TSE.encodeUtf8 text
 
 parseMarble :: [Text] -> Marble
 parseMarble params =

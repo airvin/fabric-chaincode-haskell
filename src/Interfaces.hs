@@ -65,7 +65,7 @@ class ChaincodeStubInterface ccs where
   -- composite keys, which internally get prefixed with 0x00 as composite
   -- key namespace. In addition, if using CouchDB, keys can only contain
   -- valid UTF-8 strings and cannot begin with an underscore ("_").
-  putState :: ccs -> Text -> ByteString -> IO (Either Error ByteString)
+  putState :: ccs -> Text -> ByteString -> ExceptT Error IO ByteString
 
   -- DelState records the specified `key` to be deleted in the writeset of
   -- the transaction proposal. The `key` and its value will be deleted from
